@@ -1,0 +1,82 @@
+#include "utilities.hpp"
+#include "motorControlClass.hpp"
+#include "bno055SensorClass.hpp"
+#include "uartCommsClass.hpp"
+#include "roverControl.hpp"
+
+extern "C" {
+    void test_motor() {
+        printf("Log level set\n");
+        std::unique_ptr<motorControlClass> frontLeft;
+        frontLeft = std::make_unique<motorControlClass>(GPIO_NUM_18, GPIO_NUM_19, GPIO_NUM_27, GPIO_NUM_26);
+        printf("Motor instance created\n");
+        frontLeft->setPWM(13, PWM_LEFT_CHANNEL, PWM_FREQ, PWM_BIT_RESOLUTION, PWM_LEFT_TIMER);
+        printf("PWM Set\n");
+        frontLeft->setFullRotationPulseCount();
+        printf("FR Pulse count Set\n");
+        frontLeft->setForwardPinState(0,1,true);
+        printf("Forward Pin state\n");
+
+        while(1) {
+            printf("Running Chk 1\n");
+            frontLeft->moveWithPulseCount(50, 20);
+            vTaskDelay(500/portTICK_PERIOD_MS);
+
+            printf("Running Chk 2\n");
+            frontLeft->moveWithPulseCount(-100, 40);
+            vTaskDelay(500/portTICK_PERIOD_MS);
+        }
+    }
+
+    void test_orientation() {
+        printf("9-axis Orientation Sensor test\n");        
+        std::unique_ptr<bno055SensorClass> orientSensor = std::make_unique<bno055SensorClass>(SENSOR_9AXIS_ADDRESS);
+        while(1) {
+            printf("Sensor Calibration: %d\n", (int)orientSensor->isSensorCalibrated());
+
+            float testVals[4]{};
+            orientSensor->getEulerAngles(testVals[0],testVals[1],testVals[2]);
+            printf("Euler Angles: X: %f, Y: %f, Z: %f\n", testVals[0],testVals[1],testVals[2]);
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+    }
+
+    void test_uart() {
+        printf("UART test\n");        
+
+        std::unique_ptr<uartCommsClass> uartComms = std::make_unique<uartCommsClass>();
+        const char *msg = "Hello over USB-UART!\r\n";
+        uartComms->uart_print(msg);
+
+        while(1) {
+            uint8_t data[1024]{0};
+            int len = uartComms->uart_read(data, 1024);
+            if (len > 0) {
+                len = uartComms->uart_write(data, len);
+            }
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+    }
+
+    void test_rover() {
+        printf("Rover Test\n");
+
+        std::unique_ptr<roverControl> rover = std::make_unique<roverControl>();
+        while (1) {
+            rover->run();
+        }
+    }
+
+
+    void app_main(void) {
+
+        printf("Start Test\n");
+        esp_log_level_set(TAG, ESP_LOG_DEBUG);
+        
+        // test_motor();
+        // test_orientation();
+        // test_uart();
+
+        test_rover();
+    }
+}
