@@ -48,7 +48,7 @@ class MotorDriver: public Plugin {
         }
     }
 
-    void motor_run(int16_t fr,int16_t fl ,int16_t rr,int16_t rl) {
+    inline std::vector<uint8_t> motor_run(int16_t fr,int16_t fl ,int16_t rr,int16_t rl) {
 
         std::vector<uint8_t> speed(9);
         speed[0] = I2C_MOTOR_SPEED_CONTROL_REG;
@@ -65,17 +65,40 @@ class MotorDriver: public Plugin {
         speed[7] = (rl>>8)&0xff;
         speed[8] = (rl)&0xff;
 
-        write_data(speed);
+        return speed;
+    }
+
+    void forward(int pulsecount, int speed) {
+        commObj->write(i2c_dev_addr, motor_run(speed,speed,speed,speed));
+    }
+
+    void reverse(int pulsecount, int speed) {
+        commObj->write(i2c_dev_addr, motor_run(-speed,-speed,-speed,-speed));
+    }
+
+    void left(int pulsecount, int speed) {
+        commObj->write(i2c_dev_addr, motor_run(speed,-speed,speed,-speed));
+    }
+
+
+    void right(int pulsecount, int speed) {
+        commObj->write(i2c_dev_addr, motor_run(-speed,speed,-speed,speed));
+    }
+
+    void stop() {
+        commObj->write(i2c_dev_addr, motor_run(0,0,0,0));
     }
 
 public:
-    MotorDriver(std::string name, std::shared_ptr<CommsBase> comms_writer, std::shared_ptr<CommsBase> comms_reader, char cmd_delimiter = '\n') : Plugin(name, comms_writer), delimiter(cmd_delimiter) {
-        uartComms = comms_reader;
-    }
+    MotorDriver(std::string name, std::shared_ptr<CommsBase> comms_writer, std::shared_ptr<CommsBase> comms_reader, uint8_t i2c_addr, char cmd_delimiter = '\n') : Plugin(name, comms_writer), uartComms(comms_reader), i2c_dev_addr(i2c_addr), delimiter(cmd_delimiter) {}
 
     bool write_data(const std::vector<uint8_t>& buffer) { 
         commObj->write(i2c_dev_addr, buffer);
         return true; 
+    }
+
+    bool read_data(std::vector<uint8_t>& buffer) {
+        
     }
 
     bool execute_action() override {
@@ -99,23 +122,23 @@ public:
 
             // Call command
             switch (toupper(cmdChar)) {
-            case 'F': 
-                forward(pulseCount, speed);
-                return true;
-            case 'B': 
-                reverse(pulseCount, speed);
-                return true;
-            case 'L': 
-                left(pulseCount, speed);
-                return true;
-            case 'R': 
-                right(pulseCount, speed);
-                return true;
-            case 'S': 
-                stop(pulseCount, speed);
-                return true;
-            default:  
-                return true;
+                case 'F': 
+                    forward(pulseCount, speed);
+                    return true;
+                case 'B': 
+                    reverse(pulseCount, speed);
+                    return true;
+                case 'L': 
+                    left(pulseCount, speed);
+                    return true;
+                case 'R': 
+                    right(pulseCount, speed);
+                    return true;
+                case 'S': 
+                    stop();
+                    return true;
+                default:  
+                    return true;
             }   
 
         }
