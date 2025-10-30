@@ -10,13 +10,14 @@
 
 extern "C" {
     class Plugin {
+    protected:
+        std::shared_ptr<Logger> logger;
         std::string plugin_name;
         uint32_t plugin_id;
         std::shared_ptr<CommsBase> commObj;
-        std::shared_ptr<Logger> logger;
 
-        Message inputBuffer;
         Message outputBuffer;
+        std::vector<Message> msgBuffer;
 
     public:
         Plugin(std::string name, std::shared_ptr<CommsBase> comms, std::shared_ptr<Logger> logs) : 
@@ -42,7 +43,10 @@ extern "C" {
             return outputBuffer;
         }
         void receiveMessage(Message msg) { 
-            inputBuffer = msg;
+            msgBuffer.push_back(msg);
+        }
+        std::vector<Message>* get_msgBuffer_ptr() {
+            return &msgBuffer;
         }
 
         // Called once to setup plugin (pass platform comms if needed)
@@ -51,7 +55,7 @@ extern "C" {
         }
 
         // Optional: Process incoming data
-        virtual void process() {}
+        virtual void process() = 0;
 
         // Optional: plugin can log its own status
         virtual void logStatus(std::string msg) const {

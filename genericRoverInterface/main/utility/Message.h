@@ -19,10 +19,8 @@ extern "C" {
         Message() {
             this->src = 0;
             this->dst = 0;
-            this->type = 0;
-
-            // Deep copy - since it is primitive type
-            this->payload = std::vector<uint8_t>();
+            this->type = -1;
+            this->payload.clear();
         }
 
         Message(Message& msg) {
@@ -39,7 +37,14 @@ extern "C" {
         static constexpr uint8_t HOST_ID = 0xFF; // reserved ID for host (RasPi)
 
         bool isempty() {
-            return (payload.size() == 0)? true:false;
+            return (payload.size() == 0) ? true:false;
+        }
+
+        void clear() {
+            src = 0;
+            dst = 0;
+            type = -1;
+            payload.clear();
         }
 
         // Serialize into wire frame:
