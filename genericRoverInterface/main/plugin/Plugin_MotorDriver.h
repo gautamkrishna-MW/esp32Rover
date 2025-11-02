@@ -56,6 +56,8 @@ extern "C" {
     public:
         MotorPlugin(std::string name, std::shared_ptr<CommsBase> comms, std::shared_ptr<Logger> log, char cmd_delimiter = '\n') : Plugin(name, comms, log), delimiter(cmd_delimiter) {}
 
+        MotorPlugin(const char* name, std::shared_ptr<CommsBase> comms, std::shared_ptr<Logger> log, char cmd_delimiter = '\n') : Plugin(name, comms, log), delimiter(cmd_delimiter) {}
+
         void setupMotors(gpioVect mPins, gpioVect enPins, gpioVect pwmPins, int32_t pulseLowLimit, int32_t pulseHighLimit, uint32_t pwm_freq, ledc_timer_bit_t pwm_bitwidth, ledc_channel_t pwm_channel) {
 
             frontLeft = std::make_unique<Motor>(logger, mPins[0], mPins[1], enPins[0], enPins[1], pulseLowLimit, pulseHighLimit, pwmPins[0], pwm_freq, pwm_bitwidth, pwm_channel);

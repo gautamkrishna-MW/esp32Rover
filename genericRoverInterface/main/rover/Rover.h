@@ -25,8 +25,12 @@ using vect8 = std::vector<uint8_t>;
 
 extern "C" {
 
+    // Singleton rover class
     class Rover {
     private:
+
+        // Singleton instance pointer
+        static std::unique_ptr<Rover> instance;
 
         // Plugin maps and handlers
         std::map<std::string, std::shared_ptr<Plugin>> pluginMap;
@@ -45,6 +49,12 @@ extern "C" {
         // Message-handler task handles
         TaskHandle_t msgTaskHandle = NULL;
         TaskHandle_t hostMsgTaskHandle = NULL;
+
+        Rover(std::unique_ptr<CommsBase> hostComm, Logger& logger)
+            : hostComm_(std::move(hostComm)), log(logger) {
+                plugin_id = 0;
+                log.log_info("Rover", "Rover instance created.\n");
+            }
 
         // Helper: Byte stream to message queue
         static bool parseByteStreamToMessage(vect8 buffer, std::queue<Message>& msgQ) {
@@ -170,12 +180,19 @@ extern "C" {
         }
 
     public:
-        Rover(std::unique_ptr<CommsBase> hostComm, Logger& logger)
-            : hostComm_(std::move(hostComm)), log(logger) {
-                plugin_id = 0;
+        
+        // Pointer to singleton class
+        static Rover& getInstance(std::unique_ptr<CommsBase>& hostComm, Logger& logger) {
+            if (instance == nullptr) {
+                instance.reset(new Rover(std::move(hostComm), logger));
             }
-
+            return *instance;
+        }
         ~Rover() { stop(); }
+
+        // Prevent copying and assignment
+        Rover(const Rover&) = delete;
+        Rover& operator=(const Rover&) = delete;
 
         void registerPlugin(std::shared_ptr<Plugin> plugin) {
             std::lock_guard<std::mutex> lk(mutex);
@@ -231,6 +248,7 @@ extern "C" {
             }
             vTaskDelete(msgTaskHandle);
             vTaskDelete(hostMsgTaskHandle);
+            instance = nullptr;
         }
     };
 }
