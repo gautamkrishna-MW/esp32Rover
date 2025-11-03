@@ -16,7 +16,7 @@ extern "C" {
     class I2CComms : public CommsBase {
     private:
 
-        static std::mutex mtx_lock;    
+        inline static std::mutex mtx_lock;    
 
         // I2C Bus
         i2c_port_num_t i2c_port;

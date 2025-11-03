@@ -11,11 +11,11 @@
 extern "C" {
     class Plugin {
     protected:
-        std::shared_ptr<Logger> logger;
         std::string plugin_name;
-        uint32_t plugin_id;
         std::shared_ptr<CommsBase> commObj;
-
+        std::shared_ptr<Logger> logger;
+        uint32_t plugin_id;
+        
         Message outputBuffer;
         std::vector<Message> msgBuffer;
 

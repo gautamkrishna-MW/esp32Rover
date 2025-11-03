@@ -7,7 +7,6 @@
 
 #include "driver/gpio.h"
 #include "driver/ledc.h"
-#include "driver/pcnt.h"
 #include "driver/pulse_cnt.h"
 
 #include "../utility/Logger.h"
@@ -22,23 +21,20 @@
 
 extern "C" {
 
-    static bool motorEventCallback(pcnt_unit_handle_t unit, const pcnt_watch_event_data_t *edata, void *user_ctx) {
-        Motor* motorPtr = static_cast<Motor*>(user_ctx);
-        motorPtr->stopMotor();
-        pcnt_unit_remove_watch_point(unit, edata->watch_point_value);
-        motorPtr->resetPulseCount();
-        pcnt_unit_clear_count(unit);
-    }
+    static bool motorEventCallback(pcnt_unit_handle_t unit, const pcnt_watch_event_data_t *edata, void *user_ctx);
 
     class Motor {
+
+        std::shared_ptr<Logger> logger;
         gpio_num_t motorPinA;
         gpio_num_t motorPinB;
         gpio_num_t encoderPinA;
         gpio_num_t encoderPinB;
-        std::shared_ptr<Logger> logger;
-        bool invertDirection;
-        bool invertCounter;
-
+        
+        // Pulse counter
+        int32_t pulseCountLowLimit;
+        int32_t pulseCountHighLimit;
+        
         // PWM
         gpio_num_t pwmPort;
         uint32_t pwmFreq;
@@ -47,12 +43,6 @@ extern "C" {
         ledc_timer_config_t pwmTimerConfig;
         ledc_channel_config_t pwmChannelConfig;
         
-        // Pulse counter
-        int32_t pulseCount;
-        int32_t pulseCountLowLimit;
-        int32_t pulseCountHighLimit;
-        int fullSpeedDutyCycle = 0;
-
         pcnt_unit_config_t pcnt_unit;
         pcnt_unit_handle_t pcnt_unit_handle;
         pcnt_chan_config_t pcnt_chan_a;
@@ -60,6 +50,12 @@ extern "C" {
         pcnt_channel_handle_t pcnt_chan_handle_a;
         pcnt_channel_handle_t pcnt_chan_handle_b;
         pcnt_glitch_filter_config_t filter_config;
+
+        int32_t pulseCount;
+        int fullSpeedDutyCycle = 0;
+
+        bool invertDirection;
+        bool invertCounter;
 
         void setupPCNT() {
             // Set PCNT unit
@@ -200,7 +196,7 @@ extern "C" {
             setSpeed(speedVal);
 
             logger->espErrChk(gpio_set_level(motorPinA, (uint32_t)invertDirection));
-            logger->espErrChk(gpio_set_level(motorPinB, (uint32_t)~invertDirection));
+            logger->espErrChk(gpio_set_level(motorPinB, (uint32_t)!invertDirection));
         }
 
         void runMotorBackward(int pulses, int speedVal) {
@@ -208,7 +204,7 @@ extern "C" {
             logger->espErrChk(pcnt_unit_add_watch_point(pcnt_unit_handle, pulseCount));
             setSpeed(speedVal);
 
-            logger->espErrChk(gpio_set_level(motorPinA, (uint32_t)~invertDirection));
+            logger->espErrChk(gpio_set_level(motorPinA, (uint32_t)!invertDirection));
             logger->espErrChk(gpio_set_level(motorPinB, (uint32_t)invertDirection));
         }
 
@@ -220,11 +216,20 @@ extern "C" {
         ~Motor() {
             logger->espErrChk(pcnt_unit_stop(pcnt_unit_handle));
             logger->espErrChk(pcnt_unit_clear_count(pcnt_unit_handle));
-            logger->espErrChk(pcnt_unit_remove_all_watch_step(pcnt_unit_handle));
             logger->espErrChk(pcnt_del_channel(pcnt_chan_handle_a));
             logger->espErrChk(pcnt_del_channel(pcnt_chan_handle_b));
             logger->espErrChk(pcnt_unit_disable(pcnt_unit_handle));
             logger->espErrChk(pcnt_del_unit(pcnt_unit_handle));
         }
     };
+
+    static bool motorEventCallback(pcnt_unit_handle_t unit, const pcnt_watch_event_data_t *edata, void *user_ctx) {
+        Motor* motorPtr = static_cast<Motor*>(user_ctx);
+        motorPtr->stopMotor();
+        pcnt_unit_remove_watch_point(unit, edata->watch_point_value);
+        motorPtr->resetPulseCount();
+        pcnt_unit_clear_count(unit);
+
+        return true;
+    }
 }

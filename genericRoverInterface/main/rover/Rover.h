@@ -30,53 +30,53 @@ extern "C" {
     private:
 
         // Singleton instance pointer
-        static std::unique_ptr<Rover> instance;
+        inline static std::unique_ptr<Rover> instance;
 
-        // Plugin maps and handlers
-        std::map<std::string, std::shared_ptr<Plugin>> pluginMap;
-        std::map<std::string, TaskHandle_t> pluginHandleMap;
-        Logger log;
-        static uint32_t plugin_id;
-        
         // Host communications
         std::unique_ptr<CommsBase> hostComm_;
         std::mutex mutex;
 
+        // Plugin maps and handlers
+        std::map<std::string, std::shared_ptr<Plugin>> pluginMap;
+        std::map<std::string, TaskHandle_t> pluginHandleMap;
+        std::shared_ptr<Logger> log;
+        inline static uint32_t plugin_id;
+        
         // Messages stack from plugins
         std::queue<Message> msgQueue;
-        static std::mutex msgQMutex;
+        inline static std::mutex msgQMutex;
 
         // Message-handler task handles
         TaskHandle_t msgTaskHandle = NULL;
         TaskHandle_t hostMsgTaskHandle = NULL;
 
-        Rover(std::unique_ptr<CommsBase> hostComm, Logger& logger)
+        Rover(std::unique_ptr<CommsBase> hostComm, std::shared_ptr<Logger>& logger)
             : hostComm_(std::move(hostComm)), log(logger) {
                 plugin_id = 0;
-                log.log_info("Rover", "Rover instance created.\n");
+                log->log_info("Rover", "Rover instance created.\n");
             }
 
         // Helper: Byte stream to message queue
-        static bool parseByteStreamToMessage(vect8 buffer, std::queue<Message>& msgQ) {
+        static void parseByteStreamToMessage(vect8 buffer, std::queue<Message>& msgQ) {
             // Check the start byte
             uint8_t start_byte = Message::START_BYTE;
             auto startIter = std::find(buffer.begin(), buffer.end(), start_byte);
             if (startIter == buffer.end()) {
-                return false;
+                return;
             }
 
             // If buffer is less than minimum size, discard
             uint32_t len = *(startIter + 1);
             if (len > buffer.size()) {
                 buffer.clear();
-                return false;
+                return;
             }
 
             // Remove preceding noise bytes
             buffer.erase(buffer.begin(), startIter);
 
             // If buffer is single frame, process it.
-            uint32_t len = *(startIter + 1);
+            len = *(startIter + 1);
             if (buffer.size() == len+2) {
                 Message msg;
                 Message::fromFrame(buffer, msg);
@@ -134,7 +134,7 @@ extern "C" {
                             // Check if message is for host or plugin
                             if (msg.dst == Message::HOST_ID) {
                                 bool success = roverPtr->hostComm_->write(0, msg.toFrame());
-                                roverPtr->log.espAssert(success);
+                                roverPtr->log->espAssert(success);
                             }
                             else {
                                 for (auto& kv : roverPtr->pluginMap) {
@@ -182,7 +182,7 @@ extern "C" {
     public:
         
         // Pointer to singleton class
-        static Rover& getInstance(std::unique_ptr<CommsBase>& hostComm, Logger& logger) {
+        static Rover& getInstance(std::unique_ptr<CommsBase>& hostComm, std::shared_ptr<Logger>& logger) {
             if (instance == nullptr) {
                 instance.reset(new Rover(std::move(hostComm), logger));
             }
@@ -201,22 +201,22 @@ extern "C" {
             pluginMap[pStr]->set_id(plugin_id++);
 
             std::string msg = "Registered plugin " + plugin->getName();
-            log.log_info("Rover", msg.c_str());
+            log->log_info("Rover", msg.c_str());
         }
 
         bool init() {
             if (!hostComm_) {
-                log.log_error("Rover", "No hostComm set");
+                log->log_error("Rover", "No hostComm set");
                 return false;
             }
-            if (!hostComm_->open()) {
-                log.log_error("Rover", "Host comm unable to open");
+            if (!hostComm_->open(0)) {
+                log->log_error("Rover", "Host comm unable to open");
                 return false;
             }
             // setup each plugin
             for (auto& kv : pluginMap) {
                 if (!kv.second->setup()) {
-                    log.log_info("Rover", "Plugin setup failed: %s", kv.second->getName());
+                    log->log_info("Rover", "Plugin setup failed: %s", kv.second->getName());
                 }
             }
 
@@ -226,19 +226,19 @@ extern "C" {
                 std::pair<Rover*, Plugin*> taskArg = std::make_pair<Rover*, Plugin*>(this, kv.second.get());
                 xTaskCreate(callPluginProcess, 
                 kv.second->getName().c_str(), DEFAULT_TASK_STACK_SIZE, (void*)&taskArg, 1, &taskHandle);
-                log.espAssert(taskHandle != NULL);
+                log->espAssert(taskHandle != NULL);
                 pluginHandleMap[kv.second->getName()] = taskHandle;
             }
             
             // Create task for message routing
             xTaskCreate(messageHandler, "Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &msgTaskHandle);
-            log.espAssert(msgTaskHandle != NULL);
+            log->espAssert(msgTaskHandle != NULL);
 
             // Create task for receiving messages from host
             xTaskCreate(hostMessageHandler, "Host Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &hostMsgTaskHandle);
-            log.espAssert(hostMsgTaskHandle != NULL);
+            log->espAssert(hostMsgTaskHandle != NULL);
 
-            log.log_info("Rover", "Initialization successful.\n");
+            log->log_info("Rover", "Initialization successful.\n");
             return true;
         }
 

@@ -23,7 +23,7 @@ extern "C" {
             this->payload.clear();
         }
 
-        Message(Message& msg) {
+        Message(const Message& msg) {
             this->src = msg.src;
             this->dst = msg.dst;
             this->type = msg.type;
@@ -31,7 +31,7 @@ extern "C" {
             // Deep copy - since it is primitive type
             this->payload = msg.payload;
         }
-    
+
         // Frame constants
         static constexpr uint8_t START_BYTE = 0x7E;
         static constexpr uint8_t HOST_ID = 0xFF; // reserved ID for host (RasPi)
@@ -105,6 +105,7 @@ extern "C" {
 
             // Deep copy - since it is primitive type
             this->payload = msg.payload;
+            return *this;
         }
 
         // small helper to compute simple XOR checksum

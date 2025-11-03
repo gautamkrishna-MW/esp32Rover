@@ -19,7 +19,7 @@ extern "C" {
         uint32_t uart_buffer_size;
         uart_port_t uart_port;
         
-        static std::mutex mtx_lock;
+        inline static std::mutex mtx_lock;
 
     public:
         UARTComms(std::shared_ptr<Logger> logger, uart_port_t uart_dev = UART_NUM_0, gpio_num_t tx_pin = GPIO_NUM_1, gpio_num_t rx_pin = GPIO_NUM_3, int baudrate = 115200, uint32_t buffersize = 2048, uart_word_length_t databits = UART_DATA_8_BITS, uart_parity_t parity = UART_PARITY_DISABLE, uart_stop_bits_t stopbits = UART_STOP_BITS_1, uart_hw_flowcontrol_t flw_ctrl = UART_HW_FLOWCTRL_DISABLE, uart_sclk_t clk_freq = UART_SCLK_DEFAULT): CommsBase(logger), baud_rate(baudrate), uart_buffer_size(buffersize), uart_port(uart_dev) {

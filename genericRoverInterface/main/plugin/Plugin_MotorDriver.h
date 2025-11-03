@@ -25,17 +25,7 @@ extern "C" {
     using gpioVect = std::vector<gpio_num_t>;
     using vect8 = std::vector<uint8_t>;
 
-    void readMessageIntoQueue(void* inpArgs) {
-        MotorPlugin* motor_ptr = static_cast<MotorPlugin*>(inpArgs);
-
-        while(true) {
-            if (!motor_ptr->get_msgBuffer_ptr()->empty()) {
-                for (auto& msg : *(motor_ptr->get_msgBuffer_ptr())) {
-                    motor_ptr->parseMessage(msg);
-                }
-            }
-        }
-    }
+    void readMessageIntoQueue(void* inpArgs);
 
     class MotorPlugin : public Plugin {
         
@@ -55,8 +45,6 @@ extern "C" {
         
     public:
         MotorPlugin(std::string name, std::shared_ptr<CommsBase> comms, std::shared_ptr<Logger> log, char cmd_delimiter = '\n') : Plugin(name, comms, log), delimiter(cmd_delimiter) {}
-
-        MotorPlugin(const char* name, std::shared_ptr<CommsBase> comms, std::shared_ptr<Logger> log, char cmd_delimiter = '\n') : Plugin(name, comms, log), delimiter(cmd_delimiter) {}
 
         void setupMotors(gpioVect mPins, gpioVect enPins, gpioVect pwmPins, int32_t pulseLowLimit, int32_t pulseHighLimit, uint32_t pwm_freq, ledc_timer_bit_t pwm_bitwidth, ledc_channel_t pwm_channel) {
 
@@ -95,7 +83,9 @@ extern "C" {
                 if (isValidToken(token)) {
                     command cmd;
                     int scanned = sscanf(token.c_str(), "%c %d %d", &cmd.dir, &cmd.pulseCount, &cmd.speed);
-                    if (xQueueSend(msgQ_handle, cmd, 100/portTICK_PERIOD_MS ) != pdPASS) {
+                    if (scanned != 3)
+                        continue;
+                    if (xQueueSend(msgQ_handle, (void*)&cmd, 100/portTICK_PERIOD_MS ) != pdPASS) {
                         logger->log_info("Motor Plugin", "Message queue overflow.\n");
                     }
                 }
@@ -160,4 +150,15 @@ extern "C" {
 
     };
 
+    void readMessageIntoQueue(void* inpArgs) {
+        MotorPlugin* motor_ptr = static_cast<MotorPlugin*>(inpArgs);
+
+        while(true) {
+            if (!motor_ptr->get_msgBuffer_ptr()->empty()) {
+                for (auto& msg : *(motor_ptr->get_msgBuffer_ptr())) {
+                    motor_ptr->parseMessage(msg);
+                }
+            }
+        }
+    }
 }
