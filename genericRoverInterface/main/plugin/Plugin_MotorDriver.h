@@ -154,8 +154,8 @@ extern "C" {
         MotorPlugin* motor_ptr = static_cast<MotorPlugin*>(inpArgs);
 
         while(true) {
-            if (!motor_ptr->get_msgBuffer_ptr()->empty()) {
-                for (auto& msg : *(motor_ptr->get_msgBuffer_ptr())) {
+            if (!motor_ptr->get_msgBuffer_ptr().empty()) {
+                for (auto& msg : motor_ptr->get_msgBuffer_ptr()) {
                     motor_ptr->parseMessage(msg);
                 }
             }

@@ -18,7 +18,7 @@ extern "C" {
         virtual bool open(uint32_t dev_addr) { return true; }
         virtual bool close() { return true; }
 
-        virtual bool read(uint32_t dev_addr, std::vector<uint8_t>& buffer, size_t len) { return false; }
+        virtual bool read(uint32_t dev_addr, std::vector<uint8_t>& buffer, size_t& len) { return false; }
         virtual bool write(uint32_t dev_addr, const std::vector<uint8_t>& buffer) { return false; }
 
         virtual ~CommsBase() {}

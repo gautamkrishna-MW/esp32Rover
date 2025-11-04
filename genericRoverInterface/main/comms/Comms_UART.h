@@ -22,7 +22,7 @@ extern "C" {
         inline static std::mutex mtx_lock;
 
     public:
-        UARTComms(std::shared_ptr<Logger> logger, uart_port_t uart_dev = UART_NUM_0, gpio_num_t tx_pin = GPIO_NUM_1, gpio_num_t rx_pin = GPIO_NUM_3, int baudrate = 115200, uint32_t buffersize = 2048, uart_word_length_t databits = UART_DATA_8_BITS, uart_parity_t parity = UART_PARITY_DISABLE, uart_stop_bits_t stopbits = UART_STOP_BITS_1, uart_hw_flowcontrol_t flw_ctrl = UART_HW_FLOWCTRL_DISABLE, uart_sclk_t clk_freq = UART_SCLK_DEFAULT): CommsBase(logger), baud_rate(baudrate), uart_buffer_size(buffersize), uart_port(uart_dev) {
+        UARTComms(std::shared_ptr<Logger> logger, uart_port_t uart_dev = UART_NUM_0, gpio_num_t tx_pin = GPIO_NUM_1, gpio_num_t rx_pin = GPIO_NUM_3, int baudrate = 115200, uint32_t buffersize = 4096, uart_word_length_t databits = UART_DATA_8_BITS, uart_parity_t parity = UART_PARITY_DISABLE, uart_stop_bits_t stopbits = UART_STOP_BITS_1, uart_hw_flowcontrol_t flw_ctrl = UART_HW_FLOWCTRL_DISABLE, uart_sclk_t clk_freq = UART_SCLK_DEFAULT): CommsBase(logger), baud_rate(baudrate), uart_buffer_size(buffersize), uart_port(uart_dev) {
 
             // Setup UART device and buffer size
             uart_config_t uart_config_struct = {};        
@@ -49,21 +49,14 @@ extern "C" {
             return true;
         }
 
-        bool read(uint32_t dev_addr, std::vector<uint8_t>& buffer, size_t len) override {
-            if (len > uart_buffer_size-1) {
-                comms_logger->log_error("UART", "UART Buffer length exceeded!\n");
-                return false;
-            }
-            
+        bool read(uint32_t dev_addr, std::vector<uint8_t>& buffer, size_t& len) override {
             buffer.resize(uart_buffer_size);
             {
                 // UART Read critical section
-                comms_logger->log_info("UART", "Locking the bus for read. \n");
                 std::lock_guard<std::mutex> lock(mtx_lock);
                 len = uart_read_bytes(uart_port, (void*) buffer.data(), len,  20 / portTICK_PERIOD_MS);
             }
             buffer.resize(len);
-            comms_logger->log_info("UART", "UART read successful.\n");
             return true;
         }
 

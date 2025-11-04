@@ -23,6 +23,13 @@ extern "C" {
             this->payload.clear();
         }
 
+        Message(uint8_t src_id, uint8_t dst_id, uint8_t type_id = 0, vect8 data = vect8()) {
+            src = src_id;
+            dst = dst_id;
+            type = type_id;
+            payload = data;
+        }
+
         Message(const Message& msg) {
             this->src = msg.src;
             this->dst = msg.dst;

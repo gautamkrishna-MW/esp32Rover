@@ -7,19 +7,29 @@
 
 #include "plugin/Plugin_MotorDriver.h"
 
+#include "tests/test_plugin_uartSender.h"
+
 extern "C" {
     void app_main(void) {
 
         // Logger log_ptr("Rover");
         std::shared_ptr<Logger> log_ptr = std::make_shared<Logger>("Rover");
         std::unique_ptr<CommsBase> hostCommObj = std::make_unique<UARTComms>(log_ptr);
-
-        std::string motorPluginName("Motor Driver");
-        std::shared_ptr<Logger> motorLogger = std::make_shared<Logger>(motorPluginName);
         std::shared_ptr<CommsBase> commObj = nullptr;
-        MotorPlugin motor(motorPluginName, commObj, motorLogger, '\n');
+        // std::string motorPluginName("Motor Driver");
+        // std::shared_ptr<Logger> motorLogger = std::make_shared<Logger>(motorPluginName);
+        // MotorPlugin motor(motorPluginName, commObj, motorLogger, '\n');
+
+        std::shared_ptr<Logger> rxLogger = std::make_shared<Logger>("Rx Logger");
+        std::shared_ptr<test_uartReceiver> rx = std::make_shared<test_uartReceiver>("Test Receiver Plugin", commObj, rxLogger);
+
+        std::shared_ptr<Logger> txLogger = std::make_shared<Logger>("Tx Logger");
+        std::shared_ptr<test_uartSender> tx = std::make_shared<test_uartSender>("Test Transmitter Plugin", commObj, txLogger);
 
         Rover& rover_ptr = Rover::getInstance(hostCommObj, log_ptr);
+        rover_ptr.registerPlugin(tx, 1);
+        rover_ptr.registerPlugin(rx, 2);
+
         rover_ptr.init();
     }
 }

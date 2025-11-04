@@ -5,21 +5,25 @@
 #include "esp_err.h"
 #include <string>
 
+#define FORCE_INLINE __attribute__((always_inline))
+
 extern "C" {
     class Logger {
     protected:
         std::string log_name;
 
     public:
-        Logger(std::string tag): log_name(tag) {}
+        Logger(std::string tag): log_name(tag) {
+            esp_log_level_set(log_name.c_str(), ESP_LOG_INFO);
+        }
 
-        void setLogLevel(esp_log_level_t log_level) {
+        void setLogLevel(esp_log_level_t log_level = ESP_LOG_INFO) {
             esp_log_level_set(log_name.c_str(), log_level);
         }
 
-        inline void espAssert(esp_err_t code, const char *file = __FILE__, int line = __LINE__, bool abort=true) {
-            if (code != ESP_OK) {
-                ESP_LOGE(log_name.c_str(), "ESPAssert: %s %s %d\n", esp_err_to_name(code), file, line);
+        inline FORCE_INLINE void espAssert(bool code, const char *file = __FILE__, int line = __LINE__, bool abort=true) {
+            if (code) {
+                ESP_LOGE(log_name.c_str(), "ESPAssert: %s %s %d\n", code, file, line);
                 if (abort) 
                     exit(code);
             }

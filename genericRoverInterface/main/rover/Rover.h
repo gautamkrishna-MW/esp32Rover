@@ -17,9 +17,12 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 
 #define DEFAULT_TASK_STACK_SIZE 2048
 #define INCLUDE_vTaskDelete 1
+#define MESSAGE_BUFFER_SIZE 100
+#define MESSAGE_QUEUE_WAIT_MS 100
 
 using vect8 = std::vector<uint8_t>;
 
@@ -40,24 +43,24 @@ extern "C" {
         std::map<std::string, std::shared_ptr<Plugin>> pluginMap;
         std::map<std::string, TaskHandle_t> pluginHandleMap;
         std::shared_ptr<Logger> log;
-        inline static uint32_t plugin_id;
         
         // Messages stack from plugins
         std::queue<Message> msgQueue;
         inline static std::mutex msgQMutex;
+        QueueHandle_t msgQ;
 
         // Message-handler task handles
         TaskHandle_t msgTaskHandle = NULL;
         TaskHandle_t hostMsgTaskHandle = NULL;
+        TaskHandle_t pluginMsgTaskHandle = NULL;
 
         Rover(std::unique_ptr<CommsBase> hostComm, std::shared_ptr<Logger>& logger)
             : hostComm_(std::move(hostComm)), log(logger) {
-                plugin_id = 0;
                 log->log_info("Rover", "Rover instance created.\n");
             }
 
         // Helper: Byte stream to message queue
-        static void parseByteStreamToMessage(vect8 buffer, std::queue<Message>& msgQ) {
+        static void parseByteStreamToMessage(vect8& buffer, QueueHandle_t& msgQ) {
             // Check the start byte
             uint8_t start_byte = Message::START_BYTE;
             auto startIter = std::find(buffer.begin(), buffer.end(), start_byte);
@@ -80,7 +83,7 @@ extern "C" {
             if (buffer.size() == len+2) {
                 Message msg;
                 Message::fromFrame(buffer, msg);
-                msgQ.push(msg);
+                xQueueSend(msgQ, (void*)&msg, MESSAGE_QUEUE_WAIT_MS/portTICK_PERIOD_MS);
                 return;
             }
             else {
@@ -91,7 +94,7 @@ extern "C" {
                     len = *(startIter + 1);
                     vect8 frame(startIter, buffer.begin() + len + 2);
                     Message::fromFrame(frame, msg);
-                    msgQ.push(msg);
+                    xQueueSend(msgQ, (void*)&msg, MESSAGE_QUEUE_WAIT_MS/portTICK_PERIOD_MS);
                     buffer.erase(buffer.begin(), startIter);
                 }                
             }
@@ -102,80 +105,77 @@ extern "C" {
             // Input is the self-pointer to Rover
             Rover* roverPtr = static_cast<Rover*>(params);
             
-            // Create lock and intiate the polling process
-            std::unique_lock<std::mutex> mtxlock(msgQMutex, std::defer_lock);
+            // Iterate through host comms buffer and parse messages
             while(true) {
                 // Lock the queue resource until the queue is filled
                 vect8 buffer;
                 size_t readLen = 0;
-                mtxlock.lock();
                 roverPtr->hostComm_->read(0, buffer, readLen);
-                parseByteStreamToMessage(buffer, roverPtr->msgQueue);
-                mtxlock.unlock();                
+                if (!buffer.empty())
+                    parseByteStreamToMessage(buffer, roverPtr->msgQ);
+                
+                vTaskDelay(pdMS_TO_TICKS(5));
+            }
+        }
+
+        static void pluginMessageHandler(void* params) {
+            // Input is the self-pointer to Rover
+            Rover* roverPtr = static_cast<Rover*>(params);
+            
+            // Iterate through plugin's message buffer and queue messages
+            while(true) {
+                for (auto& kv : roverPtr->pluginMap) {
+                    std::queue<Message> outMessages = kv.second->get_outMsgBuffer_ptr();
+                    while (!outMessages.empty()) {
+                        xQueueSend(roverPtr->msgQ, &(outMessages.front()), MESSAGE_QUEUE_WAIT_MS/portTICK_PERIOD_MS);
+                        outMessages.pop();
+                    }
+                }
+
+                vTaskDelay(pdMS_TO_TICKS(5));
             }
         }
 
         // Task_function: Message handler.
-        static void messageHandler(void* params) {
+        static void messageRouter(void* params) {
             // Input is the self-pointer to Rover
             Rover* roverPtr = static_cast<Rover*>(params);
 
-            // Create lock and intiate the polling process
-            std::unique_lock<std::mutex> mtxlock(msgQMutex, std::defer_lock);
+            // Using task-queue, route messages accordingly.
             while(true) {
-                // Check if queue is empty
-                if (!roverPtr->msgQueue.empty()) {
-                    // Lock the queue resource until the queue is empty
-                    mtxlock.lock();
-                    while (!roverPtr->msgQueue.empty()) {
-                        // Iterate over messages and transmit them
-                        Message& msg = roverPtr->msgQueue.front();
-                        if (msg.dst != msg.src) {
-                            // Check if message is for host or plugin
-                            if (msg.dst == Message::HOST_ID) {
-                                bool success = roverPtr->hostComm_->write(0, msg.toFrame());
-                                roverPtr->log->espAssert(success);
-                            }
-                            else {
-                                for (auto& kv : roverPtr->pluginMap) {
-                                    if (kv.second->get_id() == msg.dst) {
-                                        kv.second->receiveMessage(msg);
-                                        break;
-                                    }
-                                }
+                Message msg;
+                xQueueReceive(roverPtr->msgQ, &msg, MESSAGE_QUEUE_WAIT_MS/portTICK_PERIOD_MS);
+                if (msg.dst != msg.src) {
+                    // Check if message is for host or plugin
+                    if (msg.dst == Message::HOST_ID) {
+                        bool success = roverPtr->hostComm_->write(0, msg.toFrame());
+                        roverPtr->log->espAssert(success);
+                    }
+                    else {
+                        for (auto& kv : roverPtr->pluginMap) {
+                            if (kv.second->get_id() == msg.dst) {
+                                kv.second->receiveMessage(msg);
                             }
                         }
-                        // Pop messages after sending
-                        roverPtr->msgQueue.pop();
                     }
-                    mtxlock.unlock();
                 }
+
+                vTaskDelay(pdMS_TO_TICKS(5));
             }
         }
 
         // Task_function: Plugin process.
         static void callPluginProcess(void* param) {
-            // Cast pair back to corresponding pointers
-            std::pair<Rover*, Plugin*>* taskArg = static_cast<std::pair<Rover*, Plugin*>*>(param);
-            
             // Get rover and plugin pointers
-            Rover* roverPtr = static_cast<Rover*>(taskArg->first);
-            Plugin* pluginPtr = static_cast<Plugin*>(taskArg->second);
+            Plugin* pluginPtr = static_cast<Plugin*>(param);
             if (!pluginPtr)
                 pluginPtr->logStatus("Bad Plugin initialization");
 
-            // Loop through the plugin process-function infinetly.
+            // Loop through the plugin process-function infinitely.
             while(true) {
                 // Call the process function
                 pluginPtr->process();
-                // Check outgoing messages and stack
-                Message out;
-                if (!pluginPtr->sendMessage().isempty()) {
-                    if (out.dst == Message::HOST_ID)
-                        roverPtr->msgQueue.push(out);
-                    else
-                        roverPtr->msgQueue.push(out);
-                }
+                vTaskDelay(pdMS_TO_TICKS(5));
             }
         }
 
@@ -194,11 +194,11 @@ extern "C" {
         Rover(const Rover&) = delete;
         Rover& operator=(const Rover&) = delete;
 
-        void registerPlugin(std::shared_ptr<Plugin> plugin) {
+        void registerPlugin(std::shared_ptr<Plugin> plugin, uint32_t id) {
             std::lock_guard<std::mutex> lk(mutex);
             std::string pStr = plugin->getName();
             pluginMap[pStr] = plugin;
-            pluginMap[pStr]->set_id(plugin_id++);
+            pluginMap[pStr]->set_id(id);
 
             std::string msg = "Registered plugin " + plugin->getName();
             log->log_info("Rover", msg.c_str());
@@ -220,23 +220,31 @@ extern "C" {
                 }
             }
 
-            // Create task for each plugin (all plugins run concurrently and in parallel)
-            TaskHandle_t taskHandle = NULL;
-            for (auto& kv : pluginMap) {
-                std::pair<Rover*, Plugin*> taskArg = std::make_pair<Rover*, Plugin*>(this, kv.second.get());
-                xTaskCreate(callPluginProcess, 
-                kv.second->getName().c_str(), DEFAULT_TASK_STACK_SIZE, (void*)&taskArg, 1, &taskHandle);
-                log->espAssert(taskHandle != NULL);
-                pluginHandleMap[kv.second->getName()] = taskHandle;
-            }
-            
+            msgQ = xQueueCreate(MESSAGE_BUFFER_SIZE, sizeof(Message));
+            assert(msgQ);
+            // log->print_msg("Rover", "Q: %d\n", msgQ);
+            // log->espAssert(msgQ != NULL, __FILE__, __LINE__);
+
             // Create task for message routing
-            xTaskCreate(messageHandler, "Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &msgTaskHandle);
-            log->espAssert(msgTaskHandle != NULL);
+            xTaskCreate(messageRouter, "Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &msgTaskHandle);
+            assert(msgTaskHandle);
 
             // Create task for receiving messages from host
             xTaskCreate(hostMessageHandler, "Host Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &hostMsgTaskHandle);
-            log->espAssert(hostMsgTaskHandle != NULL);
+            assert(hostMsgTaskHandle);
+
+            // Create task for receiving messages from plugins
+            xTaskCreate(pluginMessageHandler, "Plugin Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &pluginMsgTaskHandle);
+            assert(pluginMsgTaskHandle);
+
+            // Create task for each plugin (all plugins run concurrently and in parallel)
+            for (auto& kv : pluginMap) {
+                TaskHandle_t taskHandle = NULL;
+                xTaskCreate(callPluginProcess, 
+                kv.second->getName().c_str(), DEFAULT_TASK_STACK_SIZE, (void*)&kv.second, 1, &taskHandle);
+                assert(taskHandle);
+                pluginHandleMap[kv.second->getName()] = taskHandle;
+            }
 
             log->log_info("Rover", "Initialization successful.\n");
             return true;

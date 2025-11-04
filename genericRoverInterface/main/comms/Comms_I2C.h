@@ -73,7 +73,7 @@ extern "C" {
             return true;
         }
 
-        bool read(uint32_t dev_addr, std::vector<uint8_t>& buffer, size_t len) override {
+        bool read(uint32_t dev_addr, std::vector<uint8_t>& buffer, size_t& len) override {
 
             uint8_t register_address = buffer[0];
             // Lock the bus when multiple device wants to read/write

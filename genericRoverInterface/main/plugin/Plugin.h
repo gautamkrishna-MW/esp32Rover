@@ -16,7 +16,7 @@ extern "C" {
         std::shared_ptr<Logger> logger;
         uint32_t plugin_id;
         
-        Message outputBuffer;
+        std::queue<Message> outMsgBuffer;
         std::vector<Message> msgBuffer;
 
     public:
@@ -39,14 +39,17 @@ extern "C" {
         }
 
         // Set/get message buffer
-        Message sendMessage() { 
-            return outputBuffer;
+        std::queue<Message>& get_outMsgBuffer_ptr() { 
+            return outMsgBuffer;
         }
         void receiveMessage(Message msg) { 
             msgBuffer.push_back(msg);
         }
-        std::vector<Message>* get_msgBuffer_ptr() {
-            return &msgBuffer;
+        std::vector<Message>& get_msgBuffer_ptr() {
+            return msgBuffer;
+        }
+        void sendMessage(Message& msg) {
+            outMsgBuffer.push(msg);
         }
 
         // Called once to setup plugin (pass platform comms if needed)
