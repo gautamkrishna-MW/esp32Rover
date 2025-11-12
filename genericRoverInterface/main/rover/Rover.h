@@ -20,6 +20,7 @@
 #include "freertos/queue.h"
 
 #define DEFAULT_TASK_STACK_SIZE 2048
+#define DEFAULT_TASK_DELAY_MS 500
 #define INCLUDE_vTaskDelete 1
 #define MESSAGE_BUFFER_SIZE 100
 #define MESSAGE_QUEUE_WAIT_MS 100
@@ -45,8 +46,6 @@ extern "C" {
         std::shared_ptr<Logger> log;
         
         // Messages stack from plugins
-        std::queue<Message> msgQueue;
-        inline static std::mutex msgQMutex;
         QueueHandle_t msgQ;
 
         // Message-handler task handles
@@ -113,8 +112,7 @@ extern "C" {
                 roverPtr->hostComm_->read(0, buffer, readLen);
                 if (!buffer.empty())
                     parseByteStreamToMessage(buffer, roverPtr->msgQ);
-                
-                vTaskDelay(pdMS_TO_TICKS(5));
+                vTaskDelay(pdMS_TO_TICKS(DEFAULT_TASK_DELAY_MS));
             }
         }
 
@@ -131,8 +129,7 @@ extern "C" {
                         outMessages.pop();
                     }
                 }
-
-                vTaskDelay(pdMS_TO_TICKS(5));
+                vTaskDelay(pdMS_TO_TICKS(DEFAULT_TASK_DELAY_MS));
             }
         }
 
@@ -142,8 +139,8 @@ extern "C" {
             Rover* roverPtr = static_cast<Rover*>(params);
 
             // Using task-queue, route messages accordingly.
+            Message msg;
             while(true) {
-                Message msg;
                 xQueueReceive(roverPtr->msgQ, &msg, MESSAGE_QUEUE_WAIT_MS/portTICK_PERIOD_MS);
                 if (msg.dst != msg.src) {
                     // Check if message is for host or plugin
@@ -159,23 +156,26 @@ extern "C" {
                         }
                     }
                 }
-
-                vTaskDelay(pdMS_TO_TICKS(5));
+                vTaskDelay(pdMS_TO_TICKS(DEFAULT_TASK_DELAY_MS));
             }
         }
 
         // Task_function: Plugin process.
         static void callPluginProcess(void* param) {
+            printf("Plugin Task entered\n");
             // Get rover and plugin pointers
             Plugin* pluginPtr = static_cast<Plugin*>(param);
-            if (!pluginPtr)
-                pluginPtr->logStatus("Bad Plugin initialization");
+            if (!pluginPtr) {
+                printf("Bad Plugin initialization\n");
+                vTaskDelete(NULL);
+                return;
+            }
 
             // Loop through the plugin process-function infinitely.
             while(true) {
                 // Call the process function
                 pluginPtr->process();
-                vTaskDelay(pdMS_TO_TICKS(5));
+                vTaskDelay(pdMS_TO_TICKS(50));
             }
         }
 
@@ -195,12 +195,11 @@ extern "C" {
         Rover& operator=(const Rover&) = delete;
 
         void registerPlugin(std::shared_ptr<Plugin> plugin, uint32_t id) {
-            std::lock_guard<std::mutex> lk(mutex);
             std::string pStr = plugin->getName();
             pluginMap[pStr] = plugin;
             pluginMap[pStr]->set_id(id);
 
-            std::string msg = "Registered plugin " + plugin->getName();
+            std::string msg = "Registered plugin " + plugin->getName() + "\n";
             log->log_info("Rover", msg.c_str());
         }
 
@@ -226,25 +225,35 @@ extern "C" {
             // log->espAssert(msgQ != NULL, __FILE__, __LINE__);
 
             // Create task for message routing
-            xTaskCreate(messageRouter, "Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &msgTaskHandle);
+            xTaskCreate(messageRouter, "Message Router", DEFAULT_TASK_STACK_SIZE, this, 2, &msgTaskHandle);
             assert(msgTaskHandle);
+            log->log_info("Rover", "Message router task initiated.\n");
 
             // Create task for receiving messages from host
-            xTaskCreate(hostMessageHandler, "Host Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &hostMsgTaskHandle);
+            xTaskCreate(hostMessageHandler, "Host Message Handler", DEFAULT_TASK_STACK_SIZE, this, 4, &hostMsgTaskHandle);
             assert(hostMsgTaskHandle);
-
-            // Create task for receiving messages from plugins
-            xTaskCreate(pluginMessageHandler, "Plugin Message Handler", DEFAULT_TASK_STACK_SIZE, this, 2, &pluginMsgTaskHandle);
-            assert(pluginMsgTaskHandle);
+            log->log_info("Rover", "Host Message handler task initiated.\n");
 
             // Create task for each plugin (all plugins run concurrently and in parallel)
+            int task_priority = 9;
             for (auto& kv : pluginMap) {
+                printf("Plugin Called\n");
                 TaskHandle_t taskHandle = NULL;
-                xTaskCreate(callPluginProcess, 
-                kv.second->getName().c_str(), DEFAULT_TASK_STACK_SIZE, (void*)&kv.second, 1, &taskHandle);
+                xTaskCreate(callPluginProcess, kv.second->getName().c_str(), DEFAULT_TASK_STACK_SIZE*10, (void*)kv.second.get(), task_priority++, &taskHandle);
+                printf("xTask Called\n");
                 assert(taskHandle);
+                printf("Assert Called\n");
                 pluginHandleMap[kv.second->getName()] = taskHandle;
+                printf("Map Called\n");
+
+                std::string disp = "Launched " + kv.second->getName() + " plugin.\n";
+                log->log_info("Rover", disp.c_str());
             }
+
+            // Create task for receiving messages from plugins
+            xTaskCreate(pluginMessageHandler, "Plugin Message Handler", DEFAULT_TASK_STACK_SIZE, this, 8, &pluginMsgTaskHandle);
+            assert(pluginMsgTaskHandle);
+            log->log_info("Rover", "Plugin Message handler task initiated.\n");
 
             log->log_info("Rover", "Initialization successful.\n");
             return true;

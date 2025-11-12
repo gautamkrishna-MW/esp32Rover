@@ -11,12 +11,14 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 
+#include "../utility/MutexLock.h"
+
 extern "C" {
     // --- I2C Comms Example ---
     class I2CComms : public CommsBase {
     private:
 
-        inline static std::mutex mtx_lock;    
+        SemaphoreHandle_t mtx_lock;    
 
         // I2C Bus
         i2c_port_num_t i2c_port;
@@ -50,6 +52,8 @@ extern "C" {
             bus_cfg.flags.enable_internal_pullup = enable_internal_pullup;
             comms_logger->espErrChk(i2c_new_master_bus(&bus_cfg, &busHandle));
 
+            mtx_lock = xSemaphoreCreateMutex();
+
             comms_logger->log_info("I2C", "I2C Comms setup successful.\n");
         }
 
@@ -78,10 +82,11 @@ extern "C" {
             uint8_t register_address = buffer[0];
             // Lock the bus when multiple device wants to read/write
             buffer.resize(len);
+            
+            // Locking critical section
+            comms_logger->log_info("I2C", "Locking the bus for read. \n");
             {
-                // Locking critical section
-                comms_logger->log_info("I2C", "Locking the bus for read. \n");
-                std::lock_guard<std::mutex> lock(mtx_lock);
+                MutexLock lock(mtx_lock);
                 comms_logger->espErrChk(i2c_master_transmit_receive(device_list[static_cast<uint16_t>(dev_addr)], &register_address, 1, buffer.data(), len, -1));
             }
             comms_logger->log_info("I2C", "Data read complete. \n");
@@ -90,9 +95,9 @@ extern "C" {
 
         bool write(uint32_t dev_addr, const std::vector<uint8_t>& buffer) override {
             // Lock the bus when multiple device wants to read/write
+            comms_logger->log_info("I2C", "Locking the bus for write. \n");
             {
-                comms_logger->log_info("I2C", "Locking the bus for write. \n");
-                std::lock_guard<std::mutex> lock(mtx_lock);
+                MutexLock lock(mtx_lock);
                 comms_logger->espErrChk(i2c_master_transmit(device_list[static_cast<uint16_t>(dev_addr)], buffer.data(), buffer.size(), -1));
             }
             comms_logger->log_info("I2C", "Data write complete. \n");

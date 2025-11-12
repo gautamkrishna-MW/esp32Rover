@@ -7,7 +7,7 @@
 
 #include "plugin/Plugin_MotorDriver.h"
 
-#include "tests/test_plugin_uartSender.h"
+#include "tests/test_plugin_Talk.h"
 
 extern "C" {
     void app_main(void) {
@@ -21,10 +21,14 @@ extern "C" {
         // MotorPlugin motor(motorPluginName, commObj, motorLogger, '\n');
 
         std::shared_ptr<Logger> rxLogger = std::make_shared<Logger>("Rx Logger");
-        std::shared_ptr<test_uartReceiver> rx = std::make_shared<test_uartReceiver>("Test Receiver Plugin", commObj, rxLogger);
+        std::shared_ptr<test_receiver> rx = std::make_shared<test_receiver>("Test Receiver Plugin", commObj, rxLogger);
 
         std::shared_ptr<Logger> txLogger = std::make_shared<Logger>("Tx Logger");
-        std::shared_ptr<test_uartSender> tx = std::make_shared<test_uartSender>("Test Transmitter Plugin", commObj, txLogger);
+        std::shared_ptr<test_sender> tx = std::make_shared<test_sender>("Test Transmitter Plugin", commObj, txLogger);
+
+        log_ptr->setLogLevel(ESP_LOG_MAX);
+        rxLogger->setLogLevel(ESP_LOG_MAX);
+        txLogger->setLogLevel(ESP_LOG_MAX);
 
         Rover& rover_ptr = Rover::getInstance(hostCommObj, log_ptr);
         rover_ptr.registerPlugin(tx, 1);
